@@ -1,0 +1,1359 @@
+'''formulas for the stats of the items on the screen'''
+
+'''formulas for the stats of the items on the screen'''
+
+from test.test_iterlen import n
+from tkinter.constants import LEFT, RIGHT, CENTER
+from turtledemo.__main__ import STARTUP
+
+from Mahjong import Tile
+import Mahjong
+import MahjongGUI 
+import Player
+import Rectangle
+import tkinter as Tk
+
+
+SCREEN_WIDTH = 801
+SCREEN_HEIGHT = 801
+WALL_OFFSET = int((SCREEN_HEIGHT+SCREEN_WIDTH)/800)
+TILE_WIDTH_RATIO = 35/SCREEN_WIDTH
+TILE_HEIGHT_RATIO = 45/SCREEN_HEIGHT
+TILE_WIDTH = TILE_WIDTH_RATIO*SCREEN_WIDTH
+TILE_HEIGHT = TILE_HEIGHT_RATIO*SCREEN_HEIGHT
+PLAYER_TILE_WIDTH_RATIO = 40/SCREEN_WIDTH 
+PLAYER_TILE_HEIGHT_RATIO = 50/SCREEN_HEIGHT
+PLAYER_TILE_WIDTH = PLAYER_TILE_WIDTH_RATIO*SCREEN_WIDTH
+PLAYER_TILE_HEIGHT = PLAYER_TILE_HEIGHT_RATIO*SCREEN_HEIGHT
+FONT_RATIO = 21/SCREEN_HEIGHT
+FONT_SIZE = int(FONT_RATIO*((SCREEN_HEIGHT+SCREEN_WIDTH)/2))
+
+'''constants for our different states'''
+''' DRAW is the tile in the next tile position wsa drawn'''
+''' CALL is the tile in the next tile position was called'''
+DRAW = 0
+CALL = 1
+
+class MahjongGUI:
+    
+    def __init__(self, n: int):
+        
+        '''save the size attributes'''
+        self.screen_width = SCREEN_WIDTH
+        self.screen_height = SCREEN_HEIGHT
+        self.wall_offset = WALL_OFFSET
+        self.tile_width = TILE_WIDTH
+        self.tile_height = TILE_HEIGHT
+        self.player_tile_width = PLAYER_TILE_WIDTH
+        self.player_tile_height= PLAYER_TILE_HEIGHT
+        self.font_size = FONT_SIZE
+
+        
+        ''' save the state of mahjong and players'''
+        self.mgame = Mahjong.Mahjong(n)
+        '''Ton Player is always position 0, Nan player is always 1, etc...'''
+        
+        ''' start a game'''
+        self.start_round()
+        
+        '''set up the tkinter engine'''
+        self.root = Tk.Tk()
+        self.main_canvas = Tk.Canvas(self.root, width = self.screen_width,
+                                     height = self.screen_height, bg = 'green')
+        self.main_canvas.grid()
+        ''' set up the event bindings'''
+        self.bind_basics()
+        
+        
+        '''TESTING IS DONE HERE'''
+        '''
+        a = Player.Player('a', 0)
+        a.closed = [Tile(1, 'Man'), Tile(1, 'Man'), Tile(1, 'Man'), Tile(1, 'Man'),
+                    Tile(2, 'Man'), Tile(2, 'Man'), Tile(2, 'Man'), Tile(2, 'Man'),
+                    Tile(3, 'Man'), Tile(3, 'Man'), Tile(3, 'Man'), Tile(3, 'Man'), 
+                    Tile(4, 'Man')]
+        a.next_tile = Tile(0, 'TON')
+        
+        b = Player.Player('b', 2)
+        b.closed = [Tile(1, 'Man'), Tile(1, 'Man'), Tile(1, 'Man'), Tile(1, 'Man'),
+                    Tile(2, 'Man'), Tile(2, 'Man'), Tile(2, 'Man'), Tile(2, 'Man'),
+                    Tile(3, 'Man'), Tile(4, 'Man'), Tile(0, 'TON'), Tile(0, 'TON'), Tile(0, 'TON')]
+        
+        self.players[0] = a
+        self.players[2] = b
+        '''
+        '''TESTING IS DONE HERE'''
+       
+        '''start the tkinter engine'''
+        self.root.mainloop()
+       
+        
+    '''GAME LOGIC METHODS'''
+    ''' starts a round of mahjong'''
+    def start_round(self):
+        self.players = [Player.Player('A', 0), Player.Player('B', 1), Player.Player('C', 2),
+                        Player.Player('D', 3)]
+        self.round = self.mgame.Round(0)
+        self.round.start()
+        ''' current player is the player with a tile in next tile (starts at 0)'''
+        self.current_player = 0
+        self.current_hand = []
+        self.current_next_tile = None
+        ''' current state is DRAW'''
+        self.current_state = DRAW
+        ''' last tile that was discarded'''
+        self.last_tile = None
+        ''' list used for making sets'''
+        '''  implemented as a list of indices of the current hand, -1 for next tile'''
+        self.set_material = []
+        ''' last player is an integer representing last player to go relative to current player'''
+        self.last_player = 0
+        ''' make set tile top x is the topx coordinate of the make set rectangle'''
+        self.make_set_rect_top_x = 0
+        self.deal_players()
+            
+    ''' deals the starting tiles'''
+    def deal_players(self):
+        for i in range(3):
+            for p in self.players:
+                p.deal(self.round.deal(4))
+        for p in self.players:
+            p.deal(self.round.deal(1))
+            p.sort()
+        self.players[0].draw_tile(self.round.draw())
+        
+    ''' moves the player turn forward and makes his turn'''
+    def next_player_turn(self):
+        self.current_player = (self.current_player+1)%4
+        self.current_view = (self.current_view+1)%4
+        
+    def set_player_turn(self, p: int):
+        self.current_player = p
+        
+        
+    ''' deteremines when the round is over. combination of player over and round over'''
+    '''NEEDS WORK!!!'''
+    def round_over(self) -> bool:
+        return False
+        
+    
+    ''' BINDING METHODS'''
+    '''bind the generic events'''
+    def bind_basics(self):
+        self.root.bind('<Configure>', self.resize)
+        self.main_canvas.focus_set()
+        '''current view set. Different from current player!!!'''
+        self.current_view = 0
+        self.main_canvas.bind('<s>', self.next_player_view)
+        '''swap between open and closed view'''
+        self.hidden = True
+        self.main_canvas.bind('<a>', self.shift_open_closed_view)
+        self.main_canvas.bind('<n>', self.restart_round)
+        self.main_canvas.bind('<d>', self.player_draw_tile)
+        self.main_canvas.bind('<r>', self.call_richi)
+        
+    
+    ''' binds a mouse click to an event depending on state of game''' 
+    def bind_click(self):
+        '''first unbind the button click'''
+        self.unbind_click()
+        ''' if no next tile at all, bind call to anyone'''
+        if self.players[self.current_player].next_tile == None and self.current_state == DRAW:
+            print('binding call')
+            self.bind_call()
+        elif self.current_view == self.current_player:
+            ''' else someone has a next tile and only that player can make a move'''
+            if self.current_state == DRAW:
+                ''' the next tile was drawn and we can discard or make kans'''
+                self.bind_DRAW_state()
+            else:
+                ''' the next tile was called and we make chi's and pons'''
+                self.bind_CALL_state()
+            
+    '''bind discard'''
+    def bind_discard(self):
+        '''bind the basic discard to button release'''
+        self.main_canvas.bind('<ButtonRelease-1>', self.discard_tile, '+')
+    
+    '''bind call'''
+    def bind_call(self):
+        ''' bind calling a tile to button release'''
+        self.main_canvas.bind('<ButtonRelease-1>', self.call_tile)
+    
+    ''' binds added kan, closed kan, and discard into one state'''
+    def bind_DRAW_state(self):
+        ''' first we have to raise the possible closed kan tiles for clicks'''
+        self.draw_raised_kan_tiles()
+        self.main_canvas.bind('<ButtonRelease-1>', self.DRAW_state)
+    
+    ''' binds all our calls, really only lets you make sets'''
+    def bind_CALL_state(self):
+        self.main_canvas.bind('<ButtonRelease-1>', self.CALL_state)
+        
+    
+    ''' raises all our kan tiles and only draw the picture'''
+    def draw_raised_kan_tiles(self):
+        for i in range(len(self.current_hand)-2):
+            ''' if we have a triple and a next tile'''
+            if ((self.current_hand[i].tile == self.current_next_tile.tile) and
+                (self.current_hand[i+1].tile == self.current_next_tile.tile) and
+                (self.current_hand[i+2].tile == self.current_next_tile.tile)):
+                self.current_hand[i].upper()
+            ''' if we reach the third to last tile, don't bother checking a quad'''
+            if i == len(self.current_hand)-3:
+                break
+            ''' if we have 4 of a kind in hand'''
+            if ((self.current_hand[i].tile == self.current_hand[i+1].tile) and 
+                (self.current_hand[i].tile == self.current_hand[i+2].tile) and
+                (self.current_hand[i].tile == self.current_hand[i+3].tile)):
+                self.current_hand[i].upper()
+        self.draw_view(self.current_view, hidden = self.hidden)
+    
+    ''' lowers all our tiles'''
+    def lower_all_tiles(self):
+        for item in self.current_hand:
+            item.lower()  
+        
+    ''' before an action is made, unbind the mouse click button'''
+    def unbind_click(self):
+        ''' unbind action so we can rebind'''
+        self.main_canvas.unbind("<ButtonRelease-1>")
+    
+    
+    ''' UNNESSECARY BINDINGS FOR NOW'''   
+    '''bind added kan'''
+    def bind_added_kan(self):
+        self.main_canvas.bind('<ButtonRelease-1>', self.added_kan, '+')
+        
+    ''' bind closed kan'''
+    def bind_closed_kan(self):
+        ''' first we have to raise the possible closed kan tiles for clicks'''
+        for i in range(len(self.current_hand)-3):
+            if ((self.current_hand[i].tile == self.current_hand[i+1].tile) and 
+                (self.current_hand[i].tile == self.current_hand[i+2].tile) and
+                (self.current_hand[i].tile == self.current_hand[i+3].tile)):
+                self.current_hand[i].upper()
+                print(self.current_hand[i].raised)
+        self.draw_view(self.current_view, hidden = self.hidden)
+        self.main_canvas.bind('<ButtonRelease-1>', self.closed_kan, '+')
+       
+        
+    '''EVENT METHODS'''  
+    ''' resize the window'''
+    def resize(self, event):
+        self.main_canvas.delete('all')
+        self.reset_sizes(self.root.winfo_width(), self.root.winfo_height())
+        if self.current_view == self.current_player:
+            self.draw_view_and_state(self.current_view, hidden = self.hidden)
+        else:
+            self.draw_view_and_state(self.current_view, hidden = self.hidden)    
+    
+    '''resets our attributes'''
+    def reset_sizes(self, width: int, height: int):
+        self.screen_width = width
+        self.screen_height = height
+        self.tile_width = TILE_WIDTH_RATIO*width
+        self.tile_height = TILE_HEIGHT_RATIO*height
+        self.player_tile_width = PLAYER_TILE_WIDTH_RATIO*width
+        self.player_tile_height = PLAYER_TILE_HEIGHT_RATIO*height
+        self.wall_offset = int((height+width)/800)
+        self.font_size = int(FONT_RATIO*((height+width)/2))
+        
+    ''' shifts the view to the next player in line'''
+    def next_player_view(self, event):
+        self.current_view = (self.current_view+1)%4
+        if self.current_view == self.current_player:
+            self.draw_view_and_state(self.current_view, hidden = self.hidden)
+        else:
+            self.draw_view_and_state(self.current_view, hidden = self.hidden)
+    
+    ''' shifts between completely open or only player view'''
+    def shift_open_closed_view(self, event):
+        if self.hidden:
+            self.hidden = False
+        else:
+            self.hidden = True
+        if self.current_player == self.current_view:
+            self.draw_view(self.current_view, hidden = self.hidden)
+        else:
+            self.draw_view(self.current_view, hidden = self.hidden)
+     
+    ''' restarts the round'''       
+    def restart_round(self, event):
+        self.start_round()
+        self.current_view = 0
+        self.draw_view_and_state(self.current_view, hidden = self.hidden)
+        
+    ''' make a richi call'''
+    def call_richi(self, event):
+        print('richi call entry')
+        if self.current_view == self.current_player:
+            if self.players[self.current_player].richi == -1:
+                self.players[self.current_player].call_richi()
+                self.draw_view(self.current_player, hidden = self.hidden)
+            else:
+                self.players[self.current_player].cancel_richi()
+                self.draw_view(self.current_player, hidden = self.hidden)
+    
+    ''' draw a tile from the wall'''       
+    def player_draw_tile(self, event):
+        print('draw tile entry')
+        ''' our boolean check to see if if no one has a drawn tile'''
+        check = True
+        for p in self.players:
+            if p.next_tile != None:
+                check = False
+        if (check and self.current_view == (self.current_player+1)%4 and 
+            len(self.players[self.current_player].closed)%3 == 1):
+            self.current_state = DRAW
+            self.players[self.current_view].draw_tile(self.round.draw())
+            self.current_player = self.current_view
+            self.draw_view_and_state(self.current_player, hidden = self.hidden)
+            
+    ''' moves a tile into the next tile slot, but changes type to call for further actions'''
+    def call_tile(self, event):
+        print('call tile entry')
+        ''' check if click is inside next tile'''
+        if self.current_next_tile.inside(event.x, event.y) and self.last_tile != None:
+            if (self.current_view == self.current_player or 
+                self.players[self.current_view].can_chi(self.last_tile) or
+                self.players[self.current_view].can_pon(self.last_tile) or
+                self.players[self.current_view].can_open_kan(self.last_tile)):
+                ''' modify game settings'''
+                self.last_tile = None
+                self.current_state = CALL
+                self.players[self.current_view].next_tile = self.players[self.current_player].discards.pop()
+                self.update_last_player()
+                if self.current_view == self.current_player:
+                    self.last_player = -1
+                self.current_player = self.current_view
+                self.draw_view_and_state(self.current_player, hidden = self.hidden)
+            else:
+                self.player_draw_tile(event)
+    
+    ''' in this state, the state cannot move forward without making a set with the next tile'''
+    '''  you can make as many sets as you'd like though'''
+    def CALL_state(self, event):
+        print('call state entry')
+        x = event.x
+        y = event.y
+        
+        if self.last_player == -1:
+            self.discard_tile(event)
+            self.draw_view_and_state(self.current_view, hidden = self.hidden)
+            return
+        
+        ''' if next tile is none, then all we have left is discard'''
+        if self.players[self.current_player].next_tile == None:
+                self.discard_tile(event)
+                self.draw_view_and_state(self.current_view, hidden = self.hidden)
+                return
+        
+        ''' check if click is within in our hand'''
+        click = self.check_current_hand(x, y)
+        if click != -1:
+            if self.current_hand[click].is_raised():
+                print('\t lower hand tile entry')
+                ''' if the tile that was clicked is raised, then we lower it and delete from set list'''
+                self.current_hand[click].lower()
+                self.set_material.remove(click)
+            else:
+                print('\t raise hand tile entry')
+                ''' otherwise we raise it and add it to our set list'''
+                self.current_hand[click].upper()
+                self.set_material.append(click)
+            ''' draw the view at the end'''
+            self.draw_view(self.current_view, hidden=self.hidden)
+            return
+        ''' if the click is inside our rectangle for making a set and we have a complete set
+            we have to add the set, dead wall draw if it was a quad, and empty set material list'''
+        if (x >= self.make_set_rect_top_x and x < self.make_set_rect_top_x+self.tile_width and
+            y >= self.screen_height-self.tile_height and y <= self.screen_height and
+            self.have_full_set(self.set_material)):
+            self.add_set()
+            if len(self.set_material) == 3:
+                self.players[self.current_player].draw_tile(self.round.deadwall_draw())
+                self.current_state = DRAW
+            self.set_material = []
+            self.draw_view_and_state(self.current_view, hidden = self.hidden)
+            
+            
+    ''' adds our set to the current player's open hand'''    
+    def add_set(self):
+        ''' add the next tile to the temporary set and delete next tile'''
+        temp_set = [self.current_next_tile.tile]
+        self.players[self.current_player].next_tile = None
+        ''' add all the tiles in the set to a temporary set and delete them after'''
+        for i in self.set_material:
+            temp_set.append(self.current_hand[i].tile)
+            self.players[self.current_player].delete_tile(self.current_hand[i].tile)
+        ''' add the set to the current player's open hand'''
+        self.players[self.current_player].open.append((temp_set, self.last_player))
+     
+    ''' binds draw state'''       
+    def DRAW_state(self, event):
+        ''' use dora count as check to see if kans were made'''
+        initial_dora_count = self.round.dora_count
+        ''' try making added kan'''
+        self.added_kan(event)
+        ''' if dora count hasnt changed, no kan was made and try closed kan'''
+        if initial_dora_count == self.round.dora_count:
+            self.closed_kan(event)
+        ''' if dora count hasn't changed still, go ahead and discard tile'''
+        if initial_dora_count == self.round.dora_count:
+            self.discard_tile(event)
+            
+        self.draw_view_and_state(self.current_view, hidden=self.hidden)
+               
+    ''' make an added kan call by clicking on the triplet'''
+    def added_kan(self, event):
+        print('added kan entry')
+        ''' record the current x position to check click from'''
+        top_x_coord = self.screen_height
+        ''' first we have to find where the click was'''
+        for i in range (len(self.players[self.current_player].open)):
+            tup = self.players[self.current_player].open[i]
+            ''' if the tuple is a closed quad, move along '''
+            if tup[1] == 3:
+                top_x_coord -= 4*self.tile_width
+                continue
+            else:
+                top_x_coord -= (2*self.tile_width+self.tile_height)
+            if (event.x>=top_x_coord and event.x<top_x_coord+2*self.tile_width+self.tile_height and
+                        event.y>=self.screen_height-2*self.tile_width):
+                '''if the click was in this triplet then we try to make the added kan'''
+                ''' the added kan method should do everything for us, does nothing on failure'''
+                self.players[self.current_player].added_kan(i)
+        
+        ''' at the end we need to do a dead wall draw if successful kan'''
+        if self.players[self.current_player].next_tile == None:
+            self.players[self.current_player].draw_tile(self.round.deadwall_draw())
+        elif len(self.players[self.current_player].closed)%3 == 0:
+            self.players[self.current_player].insert_tile()
+            self.players[self.current_player].draw_tile(self.round.deadwall_draw())
+                
+    ''' make a closed kan by clicking on a raised tile'''
+    def closed_kan(self, event):
+        print('closed kan entry')
+        ''' check which tile has been clicked'''
+        click = self.check_current_hand(event.x, event.y)
+        if click != -1 and self.current_hand[click].is_raised():
+            '''if click is inside hand is a raised tile, make a closed kan'''
+            self.players[self.current_player].closed_kan(click)
+            '''then we need to make dead wall draw'''
+            ''' if we used our next tile for the kan, just dead wall draw'''
+            if self.players[self.current_player].next_tile == None:
+                self.players[self.current_player].draw_tile(self.round.deadwall_draw())
+            elif len(self.players[self.current_player].closed)%3 == 0:
+                self.players[self.current_player].insert_tile()
+                self.players[self.current_player].draw_tile(self.round.deadwall_draw())
+            
+        
+    '''action of discarding a tile '''
+    ''' for now only the turn player can discard'''
+    def discard_tile(self, event):
+        print('discard tile entry')
+        ''' checks for which tile has been clicked or discarded'''
+        discarded = False
+        click = self.check_current_hand(event.x, event.y)
+        '''calculate if the button click is within the hand of the player'''
+        if click != -1 and not discarded:
+            self.last_tile = self.players[self.current_player].closed[click]
+            self.players[self.current_player].discard_tile(click)
+            if self.players[self.current_player].next_tile != None:
+                self.players[self.current_player].insert_tile()
+            discarded = True
+            self.current_state = DRAW
+            print('here1')
+    
+        '''calculate if button click is within the next tile of player'''
+        if self.players[self.current_player].next_tile != None and not discarded:
+            if self.current_next_tile.inside(event.x, event.y):
+                self.last_tile = self.players[self.current_player].next_tile
+                self.players[self.current_player].pass_tile()
+                self.current_state = DRAW
+                print('here2')
+                  
+    
+    ''' checks if an event x and y are inside our current hand and returns which part of the hand'''
+    def check_current_hand(self, x, y) -> int:
+        click = -1
+        for i in range(len(self.current_hand)):
+            if self.current_hand[i].inside(x, y):
+                click = i
+        return click
+    
+    ''' modifies our last player'''
+    def update_last_player(self):
+        relative_pos = self.get_player_order(self.current_view).index(self.current_player)
+        if relative_pos == 1:
+            self.last_player = 2
+        elif relative_pos == 2:
+            self.last_player = 1
+        else:
+            self.last_player = 0
+
+        
+       
+                    
+    '''calculates if a set of coordinates is within a rectangle spaced into n horizontal parts.'''
+    ''' based in computer graphics coordinates!'''
+    ''' returns the nth part the coordinates are in, -1 if fail'''
+    ''' clicks on lines are right justified'''
+    def inside_rectangle(self, x_coord: int, y_coord: int, top_x: int, top_y: int, 
+                         total_width: int, total_height: int, n: int) -> int:
+        '''if inside rectangle for sure'''
+        if x_coord>=top_x and y_coord>=top_y and x_coord<=top_x+total_width and y_coord<=top_y+total_height:
+            '''check the sections until we find the first section the coordinate belongs in'''
+            for i in range(n):
+                if x_coord < ((total_width*(i+1))/n)+top_x:
+                    return i
+        return -1
+        
+            
+        
+       
+    ''' DRAWING METHODS'''
+    ''' this is where we modify state along with drawing the picture'''
+    ''' ONLY CALL AFTER ACTION, NEVER JUST FOR PAINTING'''
+    def draw_view_and_state(self, p: int, hidden = True):
+        print('draw view and state entry')
+        ''' create the current player hand and next tile'''
+        order = self.get_player_order(p)
+        self.generate_current_hand(self.players[order[0]].closed, 2*self.tile_width+self.tile_height, 
+                        self.screen_height-self.player_tile_height)
+        self.generate_next_tile()
+        ''' reset our set material list'''
+        self.set_material = []
+        ''' bind the clicks'''
+        self.bind_click()
+        ''' draw the view'''
+        self.draw_view(p, hidden=hidden) 
+    
+    ''' draws a view for a player given by int p'''
+    def draw_view(self, p: int, hidden = True):
+        '''clear the canvas first'''
+        self.main_canvas.delete('all')
+        
+        ''' draw the center rectangle first'''
+        self.draw_center(p)
+        
+        '''draw the walls next'''
+        self.draw_walls(p)
+        
+        ''' draw the closed hands first'''
+        self.draw_closed_hands(p, hidden = hidden)
+        
+        ''' draw the next tile'''
+        self.draw_next_tile(p, hidden = hidden)
+        
+        '''draw the discards next'''
+        self.draw_discards(p)
+        
+        '''DRAW OPEN HAND HERE'''
+        self.draw_open_hands(p)
+        
+    '''draw the open hands for all the players'''
+    def draw_open_hands(self, p: int):  
+        order = self.get_player_order(p)
+        self.draw_player_p_open_hand(order[0])
+        self.draw_p_right_open_hand(order[1])
+        self.draw_p_across_open_hand(order[2])
+        self.draw_p_left_open_hand(order[3])
+    
+    '''draw player left of p discard'''
+    def draw_p_left_open_hand(self, p: int):
+        '''start y keeps track of where to start drawing'''
+        starty = self.screen_height
+        for tup in self.players[p].open:
+            tiles = tup[0]
+            tilt = tup[1]
+            '''special case for closed quad'''
+            if tilt == 3:
+                starty = starty-4*self.tile_width
+                self.draw_tile(tiles[0], 0, starty, hidden=True, horizontal=False)
+                self.draw_tiles(tiles[1:3], 0, starty+self.tile_width, hidden=False, horizontal=False)
+                self.draw_tile(tiles[3], 0, starty+3*self.tile_width, hidden=True, horizontal=False)
+            else:
+                for i in range(2, -1, -1):
+                    '''draw the non-tilted tiles'''
+                    if i != tilt:
+                        starty = starty-self.tile_width
+                        self.draw_tile(tiles[i], 0, starty, hidden=False, horizontal=False)
+                    else:
+                        '''draw the tilted tiles'''
+                        starty = starty-self.tile_height
+                        self.draw_tile(tiles[i], 0, starty, hidden=False, horizontal=True)
+                        if len(tiles) == 4:
+                            self.draw_tile(tiles[i], self.tile_width, starty, hidden=False, horizontal=True)
+        
+    '''draw player across from p open hand'''
+    def draw_p_across_open_hand(self, p: int):
+        '''start x keeps track of where to start drawing'''
+        startx = 0
+        for tup in self.players[p].open:
+            tiles = tup[0]
+            tilt = tup[1]
+            '''draw the special case for closed quad'''
+            if tilt == 3:
+                self.draw_tile(tiles[0], startx, 0, hidden=True, horizontal=True)
+                self.draw_tiles(tiles[1:3], startx+self.tile_width, 0, hidden=False, horizontal=True)
+                self.draw_tile(tiles[3],startx+3*self.tile_width, 0 , hidden=True, horizontal=True)
+                '''update start x at the end since counting from left to right'''
+                startx = startx+4*self.tile_width
+            else:
+                for i in range(2, -1, -1):
+                    ''' if we're not on the tile to tilt then we draw normally'''
+                    if i != tilt:
+                        self.draw_tile(tiles[i], startx, 0, hidden=False, horizontal=True)
+                        startx = startx+self.tile_width
+                    else:
+                        '''if we're on the tile to tilt draw it tilted'''
+                        self.draw_tile(tiles[i], startx, 0, hidden=False, horizontal=False)
+                        '''then if we have a quad here we draw the fourth tile on top'''
+                        if len(tiles) == 4:
+                            self.draw_tile(tiles[i], startx, self.tile_width, hidden=False, horizontal=False)
+                        startx = startx+self.tile_height     
+    
+    '''draw player right of p open hand'''
+    def draw_p_right_open_hand(self, p: int):
+        '''start y keeps track of where we can start drawing for each tile'''
+        starty = 0 
+        '''for every tuple entry in the open hand'''
+        for tup in self.players[p].open:
+            tiles = tup[0]
+            tilt = tup[1]
+            ''' if the tilt number is 3 then its a closed quad and we have to draw something special'''
+            if tilt == 3:
+                '''draw tiles in order hidden, not, not, hidden'''
+                self.draw_tile(tiles[0], self.screen_width-self.tile_height, starty, 
+                                hidden=True, horizontal=False)
+                self.draw_tiles(tiles[1:3], self.screen_width-self.tile_height, starty+self.tile_width,
+                                hidden = False, horizontal=False)
+                self.draw_tile(tiles[3], self.screen_width-self.tile_height, 
+                                starty+3*self.tile_width, hidden=True, horizontal=False)
+                '''update start y at the very end since counting from the top to bottom'''
+                starty = starty+4*self.tile_width
+            else:
+                '''its only 3 tiles to draw no matter what and one of them is always tilted'''
+                ''' go backwards in order since drawing from left to right'''
+                for i in range(2, -1, -1):
+                    ''' if we're not on the tile to tilt then we draw normally'''
+                    if i != tilt:
+                        self.draw_tile(tiles[i], self.screen_width-self.tile_height, starty, 
+                                       hidden=False, horizontal=False)
+                        starty = starty+self.tile_width
+                    else:
+                        '''if we're on the tile to tilt draw it tilted'''
+                        self.draw_tile(tiles[i], self.screen_width-self.tile_width, starty, 
+                                       hidden=False, horizontal=True)
+                        '''then if we have a quad here we draw the fourth tile on top'''
+                        if len(tiles) == 4:
+                            self.draw_tile(tiles[i], self.screen_width-2*self.tile_width, starty,
+                                           hidden=False, horizontal=True)
+                        starty = starty+self.tile_height
+        
+    '''draws player p's open hand'''
+    def draw_player_p_open_hand(self, p: int):
+        '''start x keeps track of where we can start drawing for each tile'''
+        startx = self.screen_width 
+        '''for every tuple entry in the open hand'''
+        for tup in self.players[p].open:
+            tiles = tup[0]
+            tilt = tup[1]
+            ''' if the tilt number is 3 then its a closed quad and we have to draw something special'''
+            if tilt == 3:
+                '''update start x at the very beginning'''
+                startx = startx-4*self.tile_width
+                '''draw tiles in order hidden, not, not, hidden'''
+                self.draw_tile(tiles[0], startx, self.screen_height-self.tile_height, 
+                                hidden=True, horizontal=True)
+                self.draw_tiles(tiles[1:3], startx+self.tile_width, self.screen_height-self.tile_height,
+                                hidden = False, horizontal=True)
+                self.draw_tile(tiles[3], startx+3*self.tile_width, self.screen_height-self.tile_height, 
+                               hidden=True, horizontal=True)
+            else:
+                '''its only 3 tiles to draw no matter what and one of them is always tilted'''
+                ''' go backwards in order since drawing from left to right'''
+                for i in range(2, -1, -1):
+                    ''' if we're not on the tile to tilt then we draw normally'''
+                    if i != tilt:
+                        startx = startx-self.tile_width
+                        self.draw_tile(tiles[i], startx, self.screen_height-self.tile_height, 
+                                       hidden=False, horizontal=True)
+                    else:
+                        '''if we're on the tile to tilt draw it tilted'''
+                        startx = startx-self.tile_height
+                        self.draw_tile(tiles[i], startx, self.screen_height-self.tile_width, 
+                                       hidden=False, horizontal=False)
+                        '''then if we have a quad here we draw the fourth tile on top'''
+                        if len(tiles) == 4:
+                            self.draw_tile(tiles[i], startx, self.screen_height-2*self.tile_width,
+                                           hidden=False, horizontal=False)
+                        '''then if we have a triple that can be made a quad draw an empty rectangle'''
+                        if ((tiles[0] == tiles[1]) and (tiles[0] in self.players[p].closed or 
+                                                        tiles[0] == self.players[p].next_tile)):
+                            self.main_canvas.create_rectangle(startx, self.screen_height-2*self.tile_width,
+                                                              startx+self.tile_height, 
+                                                              self.screen_height-self.tile_width)
+            
+        ''' if we have a full set on our hands, we draw the special rectangle for making sets'''
+        if self.have_full_set(self.set_material):
+            self.main_canvas.create_rectangle(startx-self.tile_width, 
+                                              self.screen_height-self.tile_height, startx, 
+                                              self.screen_height)
+            self.make_set_rect_top_x = startx-self.tile_width
+        else:
+            self.make_set_rect_top_x = 0
+             
+                                    
+    '''draws the discard piles of the players from the player p's point of view'''
+    def draw_discards(self, p: int):
+        order = self.get_player_order(p)
+        '''draw the player p's discards first'''
+        self.draw_player_p_discards(order[0])
+        self.draw_p_right_discards(order[1])
+        self.draw_p_across_discards(order[2])
+        self.draw_p_left_discards(order[3])
+        
+    def draw_p_left_discards(self, p: int):
+        ''' total counter for when we're done'''
+        total_counter = 0
+        ver_counter = 0
+        ''' draw until richi or until finished'''
+        ''' richi on first turn 1 is turn 0'''
+        while ((total_counter != self.players[p].richi) and 
+        (total_counter < len(self.players[p].discards))):
+            ver_counter = total_counter//6
+            if ver_counter < 2:
+                hor_counter = total_counter%6
+            else:
+                ver_counter = 2
+                hor_counter = total_counter-ver_counter*6
+            self.draw_tile(self.players[p].discards[ver_counter*6+hor_counter], 
+                           self.screen_width/2-3.1*self.tile_width-self.wall_offset-self.tile_height-
+                           ver_counter*self.tile_height, 
+                           self.screen_height/2-3.1*self.tile_width+hor_counter*self.tile_width, 
+                           hidden = False, horizontal = False)
+            total_counter += 1
+        ''' if we're not finished, then draw richi here'''
+        if total_counter < len(self.players[p].discards):
+            ver_counter = total_counter//6
+            if ver_counter < 2:
+                hor_counter = total_counter%6
+            else:
+                ver_counter = 2
+                hor_counter = total_counter-ver_counter*6
+            self.draw_tile(self.players[p].discards[ver_counter*6+hor_counter], 
+                           self.screen_width/2-3.1*self.tile_width-self.wall_offset-self.tile_height-
+                           ver_counter*self.tile_height, 
+                           self.screen_height/2-3.1*self.tile_width+hor_counter*self.tile_width, 
+                           hidden = False, horizontal = True)
+            total_counter += 1
+        '''finish drawing the rest of the discards'''
+        richi_row = ver_counter
+        while (total_counter < len(self.players[p].discards)):
+            ver_counter = total_counter//6
+            if ver_counter < 2:
+                hor_counter = total_counter%6
+            else:
+                ver_counter = 2
+                hor_counter = total_counter-ver_counter*6
+            ''' if we're still on the richi row draw all tiles offset'''
+            if ver_counter == richi_row:
+                self.draw_tile(self.players[p].discards[ver_counter*6+hor_counter], 
+                           self.screen_width/2-3.1*self.tile_width-self.wall_offset-self.tile_height-
+                           ver_counter*self.tile_height, 
+                           self.screen_height/2-3.1*self.tile_width+(hor_counter-1)*self.tile_width+
+                           self.tile_height, 
+                           hidden = False, horizontal = False)
+            else:
+                ''' else draw them normally'''
+                self.draw_tile(self.players[p].discards[ver_counter*6+hor_counter], 
+                           self.screen_width/2-3.1*self.tile_width-self.wall_offset-
+                           self.tile_height-ver_counter*self.tile_height, 
+                           self.screen_height/2-3.1*self.tile_width+hor_counter*self.tile_width, 
+                           hidden = False, horizontal = False)
+            total_counter += 1
+        
+    def draw_p_across_discards(self, p: int):
+        ''' total counter for when we're done'''
+        total_counter = 0
+        ver_counter = 0
+        ''' draw until richi or until finished'''
+        ''' richi on first turn 1 is turn 0'''
+        while ((total_counter != self.players[p].richi) and 
+        (total_counter < len(self.players[p].discards))):
+            ver_counter = total_counter//6
+            if ver_counter < 2:
+                hor_counter = total_counter%6
+            else:
+                ver_counter = 2
+                hor_counter = total_counter-ver_counter*6
+            self.draw_tile(self.players[p].discards[ver_counter*6+hor_counter], 
+                           self.screen_width/2+3.1*self.tile_width-(hor_counter+1)*
+                           self.tile_width, 
+                           self.screen_height/2-3.1*self.tile_width-self.wall_offset-(ver_counter+1)*
+                           self.tile_height, 
+                           hidden=False, horizontal=True)
+            total_counter += 1
+        ''' if we're not finished, then draw richi here'''
+        if total_counter < len(self.players[p].discards):
+            ver_counter = total_counter//6
+            if ver_counter < 2:
+                hor_counter = total_counter%6
+            else:
+                ver_counter = 2
+                hor_counter = total_counter-ver_counter*6
+            self.draw_tile(self.players[p].discards[ver_counter*6+hor_counter], 
+                           self.screen_width/2+3.1*self.tile_width-(hor_counter)*
+                           self.tile_width-self.tile_height, 
+                           self.screen_height/2-3.1*self.tile_width-self.wall_offset-(ver_counter+1)*
+                           self.tile_height, 
+                           hidden=False, horizontal=False)
+            total_counter += 1
+        '''finish drawing the rest of the discards'''
+        richi_row = ver_counter
+        while (total_counter < len(self.players[p].discards)):
+            ver_counter = total_counter//6
+            if ver_counter < 2:
+                hor_counter = total_counter%6
+            else:
+                ver_counter = 2
+                hor_counter = total_counter-ver_counter*6
+            ''' if we're still on the richi row draw all tiles offset'''
+            if ver_counter == richi_row:
+                self.draw_tile(self.players[p].discards[ver_counter*6+hor_counter], 
+                           self.screen_width/2+3.1*self.tile_width-(hor_counter)*
+                           self.tile_width-self.tile_height, 
+                           self.screen_height/2-3.1*self.tile_width-self.wall_offset-(ver_counter+1)*
+                           self.tile_height, 
+                           hidden=False, horizontal=True)
+            else:
+                ''' else draw them normally'''
+                self.draw_tile(self.players[p].discards[ver_counter*6+hor_counter], 
+                           self.screen_width/2+3.1*self.tile_width-(hor_counter+1)*self.tile_width, 
+                           self.screen_height/2-3.1*self.tile_width-self.wall_offset-(ver_counter+1)*
+                           self.tile_height, 
+                           hidden=False, horizontal=True)   
+            total_counter += 1
+        
+     
+    def draw_p_right_discards(self, p: int):
+        ''' total counter for when we're done'''
+        total_counter = 0
+        ver_counter = 0
+        ''' draw until richi or until finished'''
+        ''' richi on first turn 1 is turn 0'''
+        while ((total_counter != self.players[p].richi) and 
+        (total_counter < len(self.players[p].discards))):
+            ver_counter = total_counter//6
+            if ver_counter < 2:
+                hor_counter = total_counter%6
+            else:
+                ver_counter = 2
+                hor_counter = total_counter-ver_counter*6
+            self.draw_tile(self.players[p].discards[ver_counter*6+hor_counter], 
+                           self.screen_width/2+3.1*self.tile_width+self.wall_offset+ver_counter*
+                           self.tile_height, 
+                           self.screen_height/2+3.1*self.tile_width-(hor_counter+1)*self.tile_width, 
+                           hidden = False, horizontal = False)
+            total_counter += 1
+        ''' if we're not finished, then draw richi here'''
+        if total_counter < len(self.players[p].discards):
+            ver_counter = total_counter//6
+            if ver_counter < 2:
+                hor_counter = total_counter%6
+            else:
+                ver_counter = 2
+                hor_counter = total_counter-ver_counter*6
+            self.draw_tile(self.players[p].discards[ver_counter*6+hor_counter], 
+                           self.screen_width/2+3.1*self.tile_width+self.wall_offset+ver_counter*
+                           self.tile_height+5*self.wall_offset, 
+                           self.screen_height/2+3.1*self.tile_width-(hor_counter)*
+                           self.tile_width-self.tile_height, 
+                           hidden = False, horizontal = True)
+            total_counter += 1
+        '''finish drawing the rest of the discards'''
+        richi_row = ver_counter
+        while (total_counter < len(self.players[p].discards)):
+            ver_counter = total_counter//6
+            if ver_counter < 2:
+                hor_counter = total_counter%6
+            else:
+                ver_counter = 2
+                hor_counter = total_counter-ver_counter*6
+            ''' if we're still on the richi row draw all tiles offset'''
+            if ver_counter == richi_row:
+                self.draw_tile(self.players[p].discards[ver_counter*6+hor_counter], 
+                           self.screen_width/2+3.1*self.tile_width+self.wall_offset+ver_counter*
+                           self.tile_height, 
+                           self.screen_height/2+3.1*self.tile_width-(hor_counter)*self.tile_width-self.tile_height, 
+                           hidden = False, horizontal = False)
+            else:
+                ''' else draw them normally'''
+                self.draw_tile(self.players[p].discards[ver_counter*6+hor_counter], 
+                           self.screen_width/2+3.1*self.tile_width+self.wall_offset+ver_counter*
+                           self.tile_height, 
+                           self.screen_height/2+3.1*self.tile_width-(hor_counter+1)*self.tile_width, 
+                           hidden = False, horizontal = False)   
+            total_counter += 1
+               
+    def draw_player_p_discards(self, p: int):
+        ''' total counter for when we're done'''
+        total_counter = 0
+        ver_counter = 0
+        ''' draw until richi or until finished'''
+        ''' richi on first turn 1 is turn 0'''
+        while ((total_counter != self.players[p].richi) and 
+        (total_counter < len(self.players[p].discards))):
+            ver_counter = total_counter//6
+            if ver_counter < 2:
+                hor_counter = total_counter%6
+            else:
+                ver_counter = 2
+                hor_counter = total_counter-ver_counter*6
+            self.draw_tile(self.players[p].discards[ver_counter*6+hor_counter], 
+                           self.screen_width/2-3.1*self.tile_width+hor_counter*self.tile_width, 
+                           self.screen_height/2+3.1*self.tile_width+self.wall_offset+ver_counter*
+                           self.tile_height, 
+                           hidden=False, horizontal=True)
+            total_counter += 1
+        ''' if we're not finished, then draw richi here'''
+        if total_counter < len(self.players[p].discards):
+            ver_counter = total_counter//6
+            if ver_counter < 2:
+                hor_counter = total_counter%6
+            else:
+                ver_counter = 2
+                hor_counter = total_counter-ver_counter*6
+            self.draw_tile(self.players[p].discards[ver_counter*6+hor_counter], 
+                           self.screen_width/2-3.1*self.tile_width+hor_counter*self.tile_width, 
+                           self.screen_height/2+3.1*self.tile_width+self.wall_offset+ver_counter*
+                           self.tile_height+5*self.wall_offset, 
+                           hidden=False, horizontal=False)
+            total_counter += 1
+        '''finish drawing the rest of the discards'''
+        richi_row = ver_counter
+        while (total_counter < len(self.players[p].discards)):
+            ver_counter = total_counter//6
+            if ver_counter < 2:
+                hor_counter = total_counter%6
+            else:
+                ver_counter = 2
+                hor_counter = total_counter-ver_counter*6
+            ''' if we're still on the richi row draw all tiles offset'''
+            if ver_counter == richi_row:
+                self.draw_tile(self.players[p].discards[ver_counter*6+hor_counter], 
+                               self.screen_width/2-3.1*self.tile_width+(hor_counter-1)*
+                               self.tile_width + self.tile_height, 
+                               self.screen_height/2+3.1*self.tile_width+self.wall_offset+ver_counter*
+                               self.tile_height, 
+                               hidden=False, horizontal=True)
+            else:
+                ''' else draw them normally'''
+                self.draw_tile(self.players[p].discards[ver_counter*6+hor_counter], 
+                           self.screen_width/2-3.1*self.tile_width+hor_counter*self.tile_width, 
+                           self.screen_height/2+3.1*self.tile_width+self.wall_offset+ver_counter*
+                           self.tile_height, 
+                           hidden=False, horizontal=True)   
+            total_counter += 1
+    
+    ''' draws the next tile with perspective relative to player p'''
+    def draw_next_tile(self, p: int, hidden = True):
+        '''find out who has the next tile'''
+        player_number = -1
+        order = self.get_player_order(p)
+        for i in range(len(order)):
+            if self.players[order[i]].next_tile != None:
+                player_number = i
+        '''if no next tile, draw empty rectangle'''
+        if player_number == -1:
+            self.current_next_tile.draw(self.main_canvas)
+        ''' if the current view holds the next tile, draw our special rectangle for it'''
+        if player_number == 0:
+            self.current_next_tile.draw(self.main_canvas)
+        ''' else draw the tile where it belongs'''
+        if player_number == 2:
+            self.draw_tile(self.players[order[player_number]].next_tile, 
+                           self.screen_width-(len(self.players[order[2]].closed)+3)*
+                           self.tile_width-self.tile_height
+                           -3*self.wall_offset, 0, hidden = hidden, horizontal = True)
+        if player_number == 1:
+            self.draw_tile(self.players[order[player_number]].next_tile, self.screen_width-self.tile_height, 
+                           self.screen_height-(len(self.players[order[1]].closed)+3)*
+                           self.tile_width-self.tile_height
+                           -3*self.wall_offset, hidden = hidden, horizontal = False)
+        if player_number == 3:
+            self.draw_tile(self.players[order[player_number]].next_tile, 
+                           0, (2+len(self.players[order[player_number]].closed))*
+                           self.tile_width+self.tile_height
+                           +3*self.wall_offset, hidden = hidden, horizontal = False)
+        
+    ''' draws the players hands, with option of hidden and non-hidden'''
+    def draw_closed_hands(self, p: int, hidden = True):
+        '''get the players in order of player p's point of view'''
+        order = self.get_player_order(p)
+        '''draw the player's tiles first'''
+        self.draw_player_hand_tiles()
+        '''draw the player across p '''
+        self.draw_tiles(list(reversed(self.players[order[2]].closed)), 
+                        self.screen_width-(len(self.players[order[2]].closed)+2)*
+                        self.tile_width-self.tile_height, 0, 
+                        hidden = hidden, horizontal = True)
+        '''draw the player right of p'''
+        self.draw_tiles(list(reversed(self.players[order[1]].closed)), self.screen_width-self.tile_height, 
+                        self.screen_height-(len(self.players[order[1]].closed)+2)*
+                        self.tile_width-self.tile_height, 
+                        hidden = hidden, horizontal = False)
+        ''' draw the player left of p'''
+        self.draw_tiles(self.players[order[3]].closed, 0, 2*self.tile_width+self.tile_height, 
+                        hidden = hidden, horizontal = False)
+        
+    ''' draws the center rectangle where all the info is, based on the player p's view'''
+    def draw_center(self, p: int):
+        self.main_canvas.create_rectangle(self.screen_width/2-3.1*self.tile_width, 
+                                          self.screen_height/2-3.1*self.tile_width,
+                                          self.screen_width/2+3.1*self.tile_width, 
+                                          self.screen_height/2+3.1*self.tile_width)
+        self.draw_center_info()
+        self.draw_player_info(p)        
+        
+    ''' draws the players' info from player p's point of view'''
+    def draw_player_info(self, p: int):
+        font = ('Times', -1*self.font_size)
+        bold_font = ('Times', -1*self.font_size, 'bold')
+        order = self.get_player_order(p)
+        ''' draw horizontal info first'''
+        ''' draw player p info first'''
+        text1 = Mahjong.Tile.WINDS[order[0]]
+        text2 = str(self.players[order[0]].points)
+        if self.players[order[0]].richi < 0:
+            richi_fill = 'green'
+        else: 
+            richi_fill = 'red'
+        ''' set font for current player'''
+        use_font = font
+        if order[0] == self.current_player:
+            use_font = bold_font
+        self.main_canvas.create_text(self.screen_width/2-.9*self.tile_width, 
+                                     self.screen_height/2+3*self.tile_width,
+                                     text = text1, fill = 'black', justify = LEFT, font = use_font,
+                                     anchor = Tk.S)
+        self.main_canvas.create_text(self.screen_width/2+5*self.wall_offset, 
+                                     self.screen_height/2+3*self.tile_width,
+                                     text = text2, fill = 'black', justify = RIGHT, font = use_font,
+                                     anchor = Tk.S)
+        self.main_canvas.create_rectangle(self.screen_width/2+17*self.wall_offset, 
+                                          self.screen_height/2+2.4*self.tile_width,
+                                          self.screen_width/2+1.4*self.tile_width, 
+                                          self.screen_height/2+2.95*self.tile_width-1.5*self.wall_offset,
+                                          outline = 'green', fill = richi_fill)
+        ''' draw the player across player p'''
+        text1 = Mahjong.Tile.WINDS[order[2]]
+        text2 = str(self.players[order[2]].points)
+        if self.players[order[2]].richi < 0:
+            richi_fill = 'green'
+        else:
+            richi_fill = 'red'
+        use_font = font
+        if order[2] == self.current_player:
+            use_font = bold_font
+        self.main_canvas.create_text(self.screen_width/2-.9*self.tile_width, 
+                                     self.screen_height/2-3*self.tile_width,
+                                     text = text1, fill = 'black', justify = LEFT, font = use_font,
+                                     anchor = Tk.N)
+        self.main_canvas.create_text(self.screen_width/2+5*self.wall_offset, 
+                                     self.screen_height/2-3*self.tile_width,
+                                     text = text2, fill = 'black', justify = RIGHT, font = use_font,
+                                     anchor = Tk.N)
+        self.main_canvas.create_rectangle(self.screen_width/2+17*self.wall_offset, 
+                                          self.screen_height/2-2.95*self.tile_width,
+                                          self.screen_width/2+1.4*self.tile_width, 
+                                          self.screen_height/2-2.4*self.tile_width-2*self.wall_offset,
+                                          outline = 'green', fill = richi_fill)
+        '''draw the player right of player p'''
+        text1 = Mahjong.Tile.WINDS[order[1]]
+        text2 = str(self.players[order[1]].points)
+        if self.players[order[1]].richi < 0:
+            richi_fill = 'green'
+        else:
+            richi_fill = 'red'
+        use_font = font
+        if order[1] == self.current_player:
+            use_font = bold_font
+        self.main_canvas.create_text(self.screen_width/2+3*self.tile_width, 
+                                     self.screen_height/2-2*self.tile_width, 
+                                     text=text1, fill = 'black', justify = RIGHT, font = use_font, 
+                                     anchor = Tk.E)
+        self.main_canvas.create_text(self.screen_width/2+3*self.tile_width, 
+                                     self.screen_height/2-1.4*self.tile_width,
+                                     text = text2, fill = 'black', justify = LEFT, font = use_font,
+                                     anchor = Tk.E)
+        self.main_canvas.create_rectangle(self.screen_width/2+2.5*self.tile_width, 
+                                          self.screen_height/2-1.1*self.tile_width,
+                                          self.screen_width/2+3*self.tile_width-1*self.wall_offset,
+                                          self.screen_height/2-.65*self.tile_width,
+                                          outline = 'green', fill = richi_fill)
+        '''draw the player left of player p'''
+        text1 = Mahjong.Tile.WINDS[order[3]]
+        text2 = str(self.players[order[3]].points)
+        if self.players[order[3]].richi < 0:
+            richi_fill = 'green'
+        else:
+            richi_fill = 'red'
+        use_font = font
+        if order[3] == self.current_player:
+            use_font = bold_font
+        self.main_canvas.create_text(self.screen_width/2-3*self.tile_width, 
+                                     self.screen_height/2-2*self.tile_width, 
+                                     text=text1, fill = 'black', justify = RIGHT, font = use_font, 
+                                     anchor = Tk.W)
+        self.main_canvas.create_text(self.screen_width/2-3*self.tile_width, 
+                                     self.screen_height/2-1.4*self.tile_width,
+                                     text = text2, fill = 'black', justify = LEFT, font = use_font,
+                                     anchor = Tk.W)
+        self.main_canvas.create_rectangle(self.screen_width/2-2.5*self.tile_width, 
+                                          self.screen_height/2-1.1*self.tile_width,
+                                          self.screen_width/2-3*self.tile_width+1*self.wall_offset,
+                                          self.screen_height/2-.65*self.tile_width,
+                                          outline = 'green', fill = richi_fill)
+        
+    ''' draw the center info'''
+    def draw_center_info(self):
+        font = ('Times', -1*self.font_size)
+        text1 = self.mgame.get_wind() + ' ' + str(self.mgame.dealer+1) + ' ROUND'
+        text2 = str(self.round.richi_sticks) + ' richi ' + str(self.mgame.bonus_round) + " honba"
+        text3 = str(self.round.dice_roll) + " roll"
+        self.main_canvas.create_text(self.screen_width/2, self.screen_height/2-.25*self.tile_width, 
+                                     text = text1, fill = 'black', justify = CENTER, font = font,
+                                     anchor = Tk.N)
+        self.main_canvas.create_text(self.screen_width/2, self.screen_height/2+1.25*self.tile_width,
+                                     text = text2, fill = 'black', justify = CENTER, font = font,
+                                     anchor = Tk.S)
+        dice_font = ('Times', -1*(self.font_size-2))
+        self.main_canvas.create_text(self.screen_width/2, self.screen_height/2-1.1*self.tile_width, 
+                                     text = text3, fill = 'black', justify = CENTER, font = dice_font, 
+                                     anchor = Tk.N)
+    
+    ''' draws the walls based off player p'''
+    def draw_walls(self, p: int):
+        walls = self.calculate_walls(p)
+        '''horizontal walls first'''
+        self.draw_wall(walls[2], self.tile_width+self.tile_height, self.tile_width+self.tile_height, 
+                       horizontal=True, reverse=False)
+        self.draw_wall(walls[0],2*self.tile_height+self.tile_width+self.wall_offset , 
+                       self.screen_height-2*self.tile_height-self.tile_width+self.wall_offset, 
+                       horizontal=True, reverse=True)
+        '''draw vertical walls next'''
+        self.draw_wall(walls[1], self.screen_width-2*self.tile_height-self.tile_width+self.wall_offset, 
+                       self.tile_height+self.tile_width, horizontal=False, reverse=False)
+        self.draw_wall(walls[3], self.tile_height+self.tile_width, 
+                       self.tile_width+2*self.tile_height+self.wall_offset, 
+                       horizontal=False, reverse = True)
+        
+    ''' draws a wall starting with tile s'''
+    ''' reverse to keep the tiles in proper order.'''
+    def draw_wall(self, s: int, x: int, y: int, horizontal = True, reverse = True):
+        '''splice the wall to be drawn'''
+        ''' set the wall to be drawn in proper order'''
+        wall = self.round.tiles[s:s+Mahjong.Mahjong.ONE_FOURTH]
+        if reverse:
+            wall = self.reverse_wall(wall)
+        
+        ''' draw the walls'''
+        if horizontal:
+            for i in range(0, Mahjong.Mahjong.ONE_FOURTH, 2):
+                self.draw_tile(wall[i+1], x+i/2*self.tile_width, y, hidden = True, horizontal=horizontal)
+                self.draw_tile(wall[i], x+i/2*self.tile_width, y, hidden = True, horizontal=horizontal)
+        else:
+            for i in range(0, Mahjong.Mahjong.ONE_FOURTH, 2):
+                self.draw_tile(wall[i+1], x, y+i/2*self.tile_width, hidden = True, horizontal=horizontal)
+                self.draw_tile(wall[i], x, y+i/2*self.tile_width, hidden = True, horizontal=horizontal)
+            
+        '''draw dora'''
+        for i in range(self.round.dora_count):   
+            ''' if any dora are in this wall'''
+            if self.round.dora-2*i >= s and self.round.dora-2*i < s+Mahjong.Mahjong.ONE_FOURTH:
+                '''find its position and then draw'''
+                dora_position = self.round.dora-2*i-s
+                if reverse:
+                    dora_position = len(wall)-dora_position-2                   
+                if horizontal:
+                    self.draw_tile(wall[dora_position], x+(dora_position)/2*self.tile_width, y, 
+                                   hidden = False, horizontal = horizontal)
+                else:
+                    self.draw_tile(wall[dora_position], x, y+(dora_position)/2*self.tile_width, 
+                                   hidden = False, horizontal=horizontal)
+                     
+    ''' rotates the player order so that the ton player is always position 0'''
+    def rotate_players(self):
+        self.players.insert(0, self.players.pop())
+        
+    ''' creates our current hand rectangles'''
+    def generate_current_hand(self, l: [Tile], x: int, y: int):
+        ''' create a list for our hand'''
+        self.current_hand = []
+        for i in range(len(l)):
+            self.current_hand.append(Rectangle.Rectangle(l[i], x+i*self.player_tile_width, y,
+                                                         self.player_tile_width, self.player_tile_height,
+                                                         self.wall_offset))
+    
+    ''' creates our current next tile rectangle'''     
+    def generate_next_tile(self):
+        player_number = -1
+        ''' create the current next tile'''
+        for i in range(len(self.players)):
+            if self.players[i].next_tile != None:
+                player_number = i
+        '''if no next tile, create empty rectangle'''
+        if player_number == -1:
+            x = 2*self.tile_width+self.tile_height+len(self.current_hand)*self.player_tile_width+3*WALL_OFFSET
+            y = self.screen_height-self.player_tile_height
+            self.current_next_tile = Rectangle.Rectangle(None, x, y, self.player_tile_width, 
+                                                         self.player_tile_height, self.wall_offset)
+        else:
+            ''' otherwise create the next tile rectangle with respect to the player who has it'''
+            x = (2*self.tile_width+self.tile_height+len(self.players[player_number].closed)*
+                 self.player_tile_width+3*WALL_OFFSET)
+            y = self.screen_height-self.player_tile_height
+            ''' someone has a next tile and we create that rectangle'''
+            self.current_next_tile = Rectangle.Rectangle(self.players[player_number].next_tile, x, y, 
+                                                         self.player_tile_width, self.player_tile_height, 
+                                                         self.wall_offset)
+            ''' if we called this tile, then we raise it'''
+            if self.current_state == CALL:
+                self.current_next_tile.upper()
+        
+    ''' special method for drawing player hand tiles specifically'''
+    def draw_player_hand_tiles(self):
+        for i in self.current_hand:
+            i.draw(self.main_canvas)
+        
+    '''special method, draws a tile in the player's hand, used for active attributes '''     
+    def draw_hand_tile(self, t: Mahjong.Tile, x: int, y: int):
+        self.main_canvas.create_rectangle(x, y, x+self.player_tile_width, y+self.player_tile_height, 
+                                          fill = 'white', activewidth = self.wall_offset)
+        self.main_canvas.create_text((2*x+self.player_tile_width)/2, (2*y+self.player_tile_height)/2, 
+                                 text = t.to_string(), fill = t.return_color(), 
+                                 justify = CENTER)
+        
+    '''draws a list of tiles, option for hidden and horizontal'''
+    ''' if none, draws nothing!'''
+    def draw_tiles(self, l: [Tile], x: int, y: int, hidden = False,
+                              horizontal = True):
+        if horizontal:
+            for i in range(len(l)):
+                self.draw_tile(l[i], x+i*self.tile_width, y, hidden = hidden, 
+                           horizontal = horizontal)
+        else:
+            for i in range(len(l)):
+                self.draw_tile(l[i], x, y+i*self.tile_width, hidden = hidden,
+                               horizontal= horizontal)        
+        
+    
+    ''' draws a single tile for view, with option of open or closed
+        and horizontal (upright) or vertical (tilted); (x,y) are upper right corner'''
+    ''' if none draws nothing'''
+    def draw_tile(self, t: Mahjong.Tile, x: int, y: int, hidden = False, 
+                  horizontal = True):
+        '''set coordinates corresponding to horizontal or vertical'''
+        if t == None:
+            return
+        if horizontal:
+            x2 = x+self.tile_width
+            y2 = y+self.tile_height
+        else:
+            x2 = x+self.tile_height
+            y2 = y+self.tile_width
+        ''' draw the tile for hidden or not hidden'''
+        if not hidden:
+            self.main_canvas.create_rectangle(x, y, x2, y2, fill = 'white')
+            self.main_canvas.create_text((x+x2)/2, (y+y2)/2, 
+                                     text = t.to_string(), fill = t.return_color(), 
+                                     justify = CENTER)
+        else:
+            self.main_canvas.create_rectangle(x, y, x2, y2, fill = 'brown')
+            
+    ''' checks is our set list contains a full and correct set'''
+    def have_full_set(self, L: [int]) -> bool:
+        ''' not 2 or more means not full set automatically'''
+        if len(L) < 2:
+            return False
+        ''' get a copy of the set of tiles'''
+        temp_set = [self.current_next_tile.tile]
+        for i in range(len(L)):
+            temp_set.append(self.current_hand[L[i]].tile)
+            
+            
+        for i in temp_set:
+            print(i.to_string().replace('\n', ' '))
+            
+            
+        ''' if the suits don't match we automatically bail'''
+        if len(set([x.suit for x in temp_set])) != 1:
+            return False
+        ''' sort our temporary set by number'''
+        temp_set.sort()
+        if len(temp_set) == 3:
+            ''' if we have a triplet return true'''
+            if temp_set[0] == temp_set[1] and temp_set[1] == temp_set[2]:
+                return True
+            ''' if we have a consecutive return true'''
+            if temp_set[0].num == temp_set[1].num-1 and temp_set[1].num == temp_set[2].num-1:
+                return True
+        elif len(temp_set) == 4:
+            ''' if we have a quad, return true'''
+            if temp_set[0] == temp_set[1] and temp_set[1] == temp_set[2] and temp_set[2] == temp_set[3]:
+                return True
+        ''' return false is not a complete and correct set'''
+        return False
+            
+        
+    '''returns the wall indices split in order to be drawn'''
+    ''' order of the walls is in order of players'''
+    def calculate_walls(self, n: int) -> [int]:
+        if n == 0: 
+            return [0, 102, 68, 34]
+        elif n == 1:
+            return [102, 68, 34, 0]
+        elif n == 2:
+            return [68, 34, 0, 102]
+        else:
+            return [34, 0, 102, 68]
+    
+    ''' returns the order of players based on initial player p'''
+    ''' in order of counter clock wise!'''
+    def get_player_order(self, p: int) -> [int]:
+        if p == 0:
+            return [0, 1, 2, 3]
+        elif p == 1:
+            return [1, 2, 3, 0]
+        elif p == 2:
+            return [2, 3, 0, 1]
+        else:
+            return [3, 0 ,1 ,2] 
+    
+    ''' used for reversing a wall when drawing walls and dora'''
+    def reverse_wall(self, l:[Tile]) -> [Tile]:
+        reversed_wall = []
+        for i in range(len(l)-1, -1, -2):
+            reversed_wall.extend(l[i-1:i+1])
+        return reversed_wall
+
+if __name__ == '__main__':
+    game = MahjongGUI(2)
+    
+        
+        
+        
+        
+       
+        
+        
+    
+
+        
+    
+        
+		
