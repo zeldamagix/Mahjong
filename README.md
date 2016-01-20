@@ -12,9 +12,10 @@ n: start a new game
 
 Left Click does multiple things, depends on the state of the game.
 left click on the empty rectangle:
-1. Nothing if last tile cannot be called and not the current player
-2. call a tile if tile can be used in a set
-3. draw a tile if current player and cannot use tile to make a set
+1. Nothing if last tile cannot be called and not the next player in line to draw
+2. current player gets their tile back (used to remake moves)
+3. call a tile if tile can be used in a set
+4. draw a tile if next player in line and next player cannot use tile to make a set
 
 left click within the hand:
 After drawing a tile:
